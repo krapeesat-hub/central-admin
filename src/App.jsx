@@ -59,7 +59,13 @@ function ConfigError() {
 }
 
 export default function App() {
-  const [passcode, setPasscode] = useState("");
+  const [session, setSession] = useState(null);
+  const [sessionChecked, setSessionChecked] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loggingIn, setLoggingIn] = useState(false);
+
   const [apps, setApps] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [view, setView] = useState("list"); // "list" | "edit" | "new"
@@ -68,6 +74,23 @@ export default function App() {
   const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState(null);
 
+  // restore/track the Supabase Auth session (real auth, not a hardcoded string)
+  useEffect(() => {
+    if (!supabase) { setSessionChecked(true); return; }
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setSessionChecked(true);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (session) loadApps();
+  }, [session]);
+
   const loadApps = async () => {
     if (!supabase) return;
     const { data } = await supabase.from("app_config").select("*").order("app_id");
@@ -75,7 +98,23 @@ export default function App() {
     setLoaded(true);
   };
 
-  useEffect(() => { loadApps(); }, []);
+  const login = async () => {
+    if (!supabase) return;
+    if (!email.trim() || !password) { setLoginError("กรอกอีเมลและรหัสผ่าน"); return; }
+    setLoggingIn(true);
+    setLoginError("");
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    setLoggingIn(false);
+    if (error) setLoginError("เข้าสู่ระบบไม่สำเร็จ: อีเมลหรือรหัสผ่านไม่ถูกต้อง");
+  };
+
+  const logout = async () => {
+    if (!supabase) return;
+    await supabase.auth.signOut();
+    setApps([]);
+    setLoaded(false);
+    setView("list");
+  };
 
   const openEdit = (app) => { setForm(app); setMessage(null); setView("edit"); };
   const openNew = () => { setForm(BLANK_FORM); setMessage(null); setView("new"); };
@@ -83,24 +122,23 @@ export default function App() {
 
   const save = async () => {
     if (!supabase) return;
-    if (passcode.length !== 6) { setMessage({ kind: "error", text: "กรอกรหัสผ่าน 6 หลักที่ด้านบนก่อนบันทึก" }); return; }
     if (!form.app_id.trim()) { setMessage({ kind: "error", text: "กรอก App ID ก่อน (เช่น parauy, app2)" }); return; }
     setSaving(true);
     setMessage(null);
-    const { error } = await supabase.rpc("update_app_config", {
-      passcode,
-      p_app_id: form.app_id.trim(),
-      p_developer_name: form.developer_name || "",
-      p_about_text: form.about_text || "",
-      p_promptpay: form.promptpay || "",
-      p_bank_name: form.bank_name || "",
-      p_bank_account_no: form.bank_account_no || "",
-      p_bank_account_name: form.bank_account_name || "",
-      p_donate_link: form.donate_link || "",
+    const { error } = await supabase.from("app_config").upsert({
+      app_id: form.app_id.trim(),
+      developer_name: form.developer_name || "",
+      about_text: form.about_text || "",
+      promptpay: form.promptpay || "",
+      bank_name: form.bank_name || "",
+      bank_account_no: form.bank_account_no || "",
+      bank_account_name: form.bank_account_name || "",
+      donate_link: form.donate_link || "",
+      updated_at: new Date().toISOString(),
     });
     setSaving(false);
     if (error) {
-      setMessage({ kind: "error", text: error.message.includes("invalid passcode") ? "รหัสผ่านไม่ถูกต้อง" : `บันทึกไม่สำเร็จ: ${error.message}` });
+      setMessage({ kind: "error", text: `บันทึกไม่สำเร็จ: ${error.message}` });
     } else {
       setMessage({ kind: "ok", text: "บันทึกเรียบร้อยแล้ว" });
       loadApps();
@@ -109,39 +147,79 @@ export default function App() {
 
   const remove = async () => {
     if (!supabase || !form.app_id) return;
-    if (passcode.length !== 6) { setMessage({ kind: "error", text: "กรอกรหัสผ่าน 6 หลักที่ด้านบนก่อนลบ" }); return; }
     if (!window.confirm(`ลบข้อมูลของแอป "${form.app_id}" ทิ้งถาวร?`)) return;
     setDeleting(true);
-    const { error } = await supabase.rpc("delete_app_config", { passcode, p_app_id: form.app_id });
+    const { error } = await supabase.from("app_config").delete().eq("app_id", form.app_id);
     setDeleting(false);
     if (error) {
-      setMessage({ kind: "error", text: error.message.includes("invalid passcode") ? "รหัสผ่านไม่ถูกต้อง" : `ลบไม่สำเร็จ: ${error.message}` });
+      setMessage({ kind: "error", text: `ลบไม่สำเร็จ: ${error.message}` });
     } else {
       backToList();
     }
   };
 
   if (!supabase) return <ConfigError />;
+  if (!sessionChecked) return null;
+
+  if (!session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-6" style={{ background: `linear-gradient(160deg, ${C.cover}, ${C.coverDeep})`, fontFamily: font }}>
+        <div className="w-full max-w-sm">
+          <div className="text-center mb-6">
+            <div style={{ fontWeight: 700, fontSize: 20, color: "#fff" }}>Central Admin</div>
+            <div style={{ fontSize: 12, color: C.goldBright, marginTop: 4 }}>เข้าสู่ระบบก่อนดู/แก้ไขข้อมูล</div>
+          </div>
+          <div className="rounded-2xl p-6" style={{ background: C.paper }}>
+            <Field label="อีเมล">
+              <input
+                style={inputStyle}
+                type="email"
+                autoComplete="username"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setLoginError(""); }}
+                placeholder="admin@example.com"
+              />
+            </Field>
+            <Field label="รหัสผ่าน">
+              <input
+                style={inputStyle}
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setLoginError(""); }}
+                onKeyDown={(e) => { if (e.key === "Enter") login(); }}
+                placeholder="••••••••"
+              />
+            </Field>
+            {loginError && <div style={{ fontSize: 12, color: C.expense, marginBottom: 12 }}>{loginError}</div>}
+            <button
+              onClick={login}
+              disabled={loggingIn || !email.trim() || !password}
+              className="w-full py-3 rounded-xl font-medium"
+              style={{ background: loggingIn || !email.trim() || !password ? "#C9C4B0" : C.cover, color: C.paper, fontSize: 14 }}
+            >
+              {loggingIn ? "กำลังตรวจสอบ..." : "เข้าสู่ระบบ"}
+            </button>
+            <div style={{ fontSize: 11, color: C.inkSoft, marginTop: 12, lineHeight: 1.6 }}>
+              ยังไม่มีบัญชี? สร้างได้จาก Supabase Dashboard → Authentication → Users → Add user
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex justify-center px-4 py-8" style={{ background: `linear-gradient(160deg, ${C.cover}, ${C.coverDeep})`, fontFamily: font }}>
       <div className="w-full max-w-md">
-        <div className="text-center mb-5">
-          <div style={{ fontWeight: 700, fontSize: 20, color: "#fff" }}>Central Admin</div>
-          <div style={{ fontSize: 12, color: C.goldBright }}>จัดการข้อมูล About / Donate ของทุกแอปในเครือ</div>
-        </div>
-
-        <div className="rounded-2xl p-4 mb-4" style={{ background: "rgba(255,255,255,0.08)" }}>
-          <div style={{ fontSize: 11, color: C.goldBright, marginBottom: 6 }}>รหัสผ่านผู้ดูแล (ใช้ร่วมกันทุกแอปในเซสชันนี้)</div>
-          <input
-            style={{ ...inputStyle, letterSpacing: "0.4em", textAlign: "center" }}
-            type="password"
-            inputMode="numeric"
-            autoComplete="off"
-            value={passcode}
-            onChange={(e) => setPasscode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            placeholder="••••••"
-          />
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 20, color: "#fff" }}>Central Admin</div>
+            <div style={{ fontSize: 12, color: C.goldBright }}>จัดการข้อมูล About / Donate ของทุกแอปในเครือ</div>
+          </div>
+          <button onClick={logout} style={{ fontSize: 12, color: C.goldBright, textDecoration: "underline" }}>
+            ออกจากระบบ
+          </button>
         </div>
 
         <div className="rounded-2xl p-5" style={{ background: C.paper }}>
@@ -214,9 +292,9 @@ export default function App() {
 
               <button
                 onClick={save}
-                disabled={saving || passcode.length !== 6}
+                disabled={saving}
                 className="w-full py-3 rounded-xl font-medium mb-2"
-                style={{ background: saving || passcode.length !== 6 ? "#C9C4B0" : C.cover, color: C.paper, fontSize: 14 }}
+                style={{ background: saving ? "#C9C4B0" : C.cover, color: C.paper, fontSize: 14 }}
               >
                 {saving ? "กำลังบันทึก..." : "บันทึกข้อมูล"}
               </button>
@@ -224,7 +302,7 @@ export default function App() {
               {view === "edit" && (
                 <button
                   onClick={remove}
-                  disabled={deleting || passcode.length !== 6}
+                  disabled={deleting}
                   className="w-full py-2.5 rounded-xl font-medium"
                   style={{ border: `1px solid ${C.expense}`, color: C.expense, fontSize: 13, background: "transparent" }}
                 >
