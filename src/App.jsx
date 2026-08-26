@@ -93,8 +93,18 @@ export default function App() {
 
   const loadApps = async () => {
     if (!supabase) return;
-    const { data } = await supabase.from("app_config").select("*").order("app_id");
-    setApps(data || []);
+    const [{ data: configData }, { data: usageData }] = await Promise.all([
+      supabase.from("app_config").select("*").order("app_id"),
+      supabase.rpc("get_app_usage_counts"),
+    ]);
+    const usageByApp = {};
+    (usageData || []).forEach((u) => { usageByApp[u.app_id] = u; });
+    const merged = (configData || []).map((app) => ({
+      ...app,
+      device_count: usageByApp[app.app_id]?.device_count ?? 0,
+      last_active: usageByApp[app.app_id]?.last_active ?? null,
+    }));
+    setApps(merged);
     setLoaded(true);
   };
 
@@ -242,7 +252,13 @@ export default function App() {
                         <div style={{ fontWeight: 700, fontSize: 14, color: C.ink, fontFamily: "monospace" }}>{app.app_id}</div>
                         <div style={{ fontSize: 11, color: C.inkSoft }}>{app.developer_name || "(ยังไม่ตั้งชื่อ)"} · {channel}</div>
                       </div>
-                      <span style={{ color: C.gold }}>›</span>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <div style={{ fontSize: 13, fontWeight: 700, color: C.income }}>{app.device_count ?? 0}</div>
+                          <div style={{ fontSize: 9, color: C.inkSoft }}>เครื่อง</div>
+                        </div>
+                        <span style={{ color: C.gold }}>›</span>
+                      </div>
                     </button>
                   );
                 })}
@@ -256,6 +272,15 @@ export default function App() {
                 <button onClick={backToList} style={{ color: C.inkSoft, fontSize: 18 }}>←</button>
                 <div style={{ fontWeight: 700, fontSize: 15, color: C.ink }}>{view === "new" ? "เพิ่มแอปใหม่" : `แก้ไข: ${form.app_id}`}</div>
               </div>
+
+              {view === "edit" && (
+                <div className="rounded-xl p-3 mb-4" style={{ background: C.paper, border: `1px solid ${C.paperLine}` }}>
+                  <div style={{ fontSize: 11, color: C.inkSoft }}>
+                    จำนวนเครื่องที่ใช้งาน (นับแบบไม่ระบุตัวตน): <b style={{ color: C.income }}>{form.device_count ?? 0}</b> เครื่อง
+                    {form.last_active && <> · ใช้งานล่าสุด {new Date(form.last_active).toLocaleDateString("th-TH")}</>}
+                  </div>
+                </div>
+              )}
 
               <Field label="App ID (ตัวระบุแอป ไม่ซ้ำกัน เช่น parauy, app2)">
                 <input style={inputStyle} value={form.app_id} onChange={(e) => setForm({ ...form, app_id: e.target.value.trim() })} placeholder="เช่น parauy" disabled={view === "edit"} />
