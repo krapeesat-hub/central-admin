@@ -337,6 +337,7 @@ export default function App() {
             </>
           )}
         </div>
+        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", textAlign: "center", marginTop: 14 }}>Central Admin v1.1</div>
       </div>
     </div>
   );
