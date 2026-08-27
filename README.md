@@ -1,40 +1,64 @@
-# central-admin
+# บันทึกพารวย — Standalone PWA (Local-only)
 
-แอปแอดมินกลาง — จัดการข้อมูล **About / Donate** ของทุกแอปในเครือ (parauy และแอปอื่นๆ ในอนาคต)
-จากที่เดียว แยกข้อมูลกันอิสระด้วย **App ID** — แอปหนึ่งใช้ PromptPay, อีกแอปใช้บัญชีธนาคารคนละธนาคารก็ได้ ไม่ปนกัน
+แอปนี้เป็น React + Vite PWA ที่รันได้อิสระ ไม่ต้องพึ่ง Claude อีกต่อไป
+ข้อมูลทั้งหมดเก็บใน `localStorage` ของเบราว์เซอร์บนอุปกรณ์นั้นๆ (local-only ตามที่ตกลงไว้)
 
-ความปลอดภัยใช้ **Supabase Auth จริง** (อีเมล+รหัสผ่าน) ไม่ใช่รหัสตัวเลขฝังในโค้ดอีกต่อไป
-
-## ตั้งค่าก่อนใช้งาน (ทำตามลำดับ)
-
-1. ถ้าเคยรัน `supabase-setup-multiapp.sql` หรือ `supabase-add-passcode-check.sql` มาก่อน **ต้องรัน** `supabase-fix-real-auth.sql` เพิ่ม (ลบฟังก์ชันรหัสผ่านแบบเก่าทิ้ง เปลี่ยนไปใช้ RLS + Supabase Auth แทน) ใน Supabase Dashboard → SQL Editor
-2. สร้างบัญชีผู้ดูแล: Supabase Dashboard → Authentication → Users → **Add user**
-   - Email: ตั้งอะไรก็ได้ ไม่ต้องเป็นอีเมลจริงที่เปิดใช้งาน เช่น `admin@parauy.internal`
-   - Password: ตั้งรหัสผ่านที่คาดเดายาก (นี่คือรหัสจริงที่ป้องกันข้อมูลของคุณ)
-   - ติ๊ก **"Auto Confirm User"** ด้วย ไม่งั้นต้องยืนยันอีเมลก่อนถึงจะ login ได้
-3. คัดลอก `.env.example` เป็น `.env.local` แล้วใส่ `VITE_SUPABASE_URL` และ `VITE_SUPABASE_ANON_KEY`
-   (**ใช้ Supabase project เดียวกับทุกแอปในเครือ** — นี่คือ "ที่เก็บกลาง")
-
-## รันดู / Deploy
+## รันดูบนเครื่องตัวเอง (dev mode)
 
 ```bash
 npm install
-npm run dev      # ทดสอบในเครื่อง
-npm run build    # ได้โฟลเดอร์ dist/ พร้อม deploy
+npm run dev
 ```
+เปิด `http://localhost:5173` (หรือพอร์ตที่ terminal แจ้ง) — ทดสอบบนมือถือเครื่องเดียวกันวง LAN ก็ใช้ `npm run dev -- --host` แล้วเปิดจาก IP เครื่อง
 
-Deploy เป็นอีกโปรเจกต์บน Vercel แยกจากทุกแอป — ตั้งค่า Environment Variables บน Vercel ให้ตรงกับ `.env.local` ด้วย
+## Build เป็นไฟล์สำหรับ deploy จริง
 
-## วิธีใช้
+```bash
+npm run build
+```
+จะได้โฟลเดอร์ `dist/` เป็น static site ล้วนๆ (HTML/CSS/JS) — เอาไปโฮสต์ที่ไหนก็ได้ที่รองรับ static file ฟรีทั้งนั้น เช่น:
 
-1. เปิดแอป → login ด้วยอีเมล+รหัสผ่านที่สร้างไว้ในขั้นตอนที่ 2
-2. หน้าแรกเห็นรายชื่อแอปทั้งหมดที่เคยตั้งค่าไว้ กดที่แอปไหนก็แก้ไขได้เลย
-3. กด **"+ เพิ่มแอปใหม่"** เพื่อสร้างแอปใหม่ในระบบ — ตั้ง App ID ให้ไม่ซ้ำกับที่มีอยู่ (เช่น `parauy`, `app2`, `app3`)
-4. แต่ละแอปกรอกช่องทางรับเงินได้อิสระ — จะใช้ PromptPay, บัญชีธนาคาร, หรือลิงก์ ก็เลือกกรอกเฉพาะที่ใช้จริง
-5. หน้าแอปแต่ละตัว (เช่นแอปพารวย) ต้องตั้งค่า `APP_ID` ในซอร์สโค้ดของตัวเองให้ตรงกับ App ID ที่ตั้งไว้ที่นี่ ถึงจะดึงข้อมูลถูกแถว
+- **Netlify** — ลาก-วางโฟลเดอร์ `dist/` ที่ https://app.netlify.com/drop (เร็วที่สุด ไม่ต้อง config)
+- **Vercel** — `vercel --prod` (ต้องติดตั้ง Vercel CLI ก่อน)
+- **GitHub Pages** — push โปรเจกต์ขึ้น repo แล้วตั้งค่า Pages ให้ serve จาก `dist/` หรือใช้ GitHub Actions build อัตโนมัติ
+- **Cloudflare Pages** — connect repo แล้ว build command `npm run build`, output directory `dist`
 
-## ความปลอดภัย
+ต้องมี HTTPS เสมอ (บริการข้างต้นให้ฟรีอัตโนมัติ) เพราะ PWA ติดตั้งได้เฉพาะบน HTTPS หรือ localhost เท่านั้น
 
-- การอ่านข้อมูล (SELECT) เปิดเป็น public เสมอ — จำเป็นเพราะแอปทุกตัวต้องอ่านได้โดยไม่ต้อง login
-- การเขียน/ลบ (INSERT/UPDATE/DELETE) จำกัดด้วย RLS ให้ทำได้เฉพาะ**ผู้ใช้ที่ login ผ่าน Supabase Auth สำเร็จเท่านั้น** — ตรวจสอบที่ฐานข้อมูลจริง ไม่ใช่แค่ตรวจในโค้ดฝั่งหน้าเว็บ
-- ไม่มีรหัสผ่านหรือ secret ใดๆ ฝังอยู่ในซอร์สโค้ดของแอปนี้อีกต่อไป
+## ติดตั้งลงหน้าจอโฮมมือถือ (ไม่ต้องขึ้น App Store / Play Store)
+
+หลัง deploy แล้วเปิดลิงก์บนมือถือ:
+
+- **iPhone (Safari)**: กดปุ่มแชร์ (ไอคอนสี่เหลี่ยมมีลูกศรขึ้น) → "เพิ่มไปยังหน้าจอโฮม"
+- **Android (Chrome)**: กดเมนู 3 จุด → "ติดตั้งแอป" หรือ "เพิ่มไปยังหน้าจอโฮม"
+
+แอปจะเปิดแบบเต็มจอเหมือนแอปจริง มีไอคอนของตัวเอง และใช้งานได้แม้ไม่มีเน็ต (offline) เพราะมี service worker แคชไฟล์ไว้ให้แล้ว
+
+## About / Donate — ข้อมูลกลาง (ไม่ใช่ local)
+
+ต่างจากข้อมูลการเงินของ user (local-only) หน้า "เกี่ยวกับแอปนี้" และ Donate ดึงข้อมูลจาก **Supabase** เพื่อให้แก้ไขได้จากที่เดียวแล้วทุกเครื่องเห็นตรงกัน:
+
+1. รันไฟล์ `supabase-setup.sql` ใน Supabase Dashboard → SQL Editor
+2. คัดลอก `.env.example` เป็น `.env.local` แล้วใส่ `VITE_SUPABASE_URL` และ `VITE_SUPABASE_ANON_KEY`
+3. ตั้งค่า Environment Variables เดียวกันนี้บน Vercel ด้วย (Project Settings → Environment Variables) ไม่งั้นตอน build บน Vercel จะไม่มีค่าเหล่านี้
+4. แก้ไขเนื้อหาผ่านแอปแยก **parauy-admin** (ส่งมาให้พร้อมกัน) ไม่ใช่แก้ในแอปนี้
+
+ถ้าไม่ตั้งค่า Supabase หรือออฟไลน์ แอปจะ fallback ไปใช้ค่าที่แคชไว้ล่าสุด หรือค่าเริ่มต้นในโค้ด — ไม่มีวันพังหรือค้าง
+
+## ข้อมูล — เก็บที่ไหน สำรองยังไง
+
+- ข้อมูลอยู่ใน `localStorage` ของเบราว์เซอร์ **เฉพาะเครื่อง/เบราว์เซอร์นั้น** ไม่ sync ข้ามอุปกรณ์
+- ล้างแคช/ถอนแอปออกจากหน้าจอโฮม (บางกรณี) หรือใช้ Private/Incognito mode จะทำให้ข้อมูลหาย
+- ในแอปมีปุ่ม **ส่งออกข้อมูล (Settings → สำรอง/กู้คืนข้อมูล)** ให้ export เป็นไฟล์ `.json` เก็บไว้ แนะนำทำเป็นประจำ โดยเฉพาะก่อนเปลี่ยนเครื่อง
+- ถ้าต้องการ sync ข้ามเครื่องจริงในอนาคต ต้องย้ายไปเฟส Supabase backend ตามที่คุยกันไว้
+
+## โครงสร้างโปรเจกต์
+
+```
+src/
+  App.jsx        ← ตัวแอปทั้งหมด (หน้าจอ/ตรรกะ/ดีไซน์)
+  localStore.js  ← เลเยอร์เก็บข้อมูล local (แทนที่ window.storage เดิมของ Claude)
+  main.jsx       ← entry point
+vite.config.js   ← ตั้งค่า PWA manifest, service worker, Tailwind
+public/          ← ไอคอนแอป (192px, 512px, favicon)
+```
